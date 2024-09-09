@@ -32,6 +32,7 @@
 
 #include "ros1_bridge/bridge.hpp"
 
+
 rclcpp::QoS qos_from_params(XmlRpc::XmlRpcValue qos_params)
 {
   auto ros2_publisher_qos = rclcpp::QoS(rclcpp::KeepLast(10));
@@ -242,6 +243,8 @@ int main(int argc, char * argv[])
   std::list<ros1_bridge::BridgeHandles> all_handles;
   std::list<ros1_bridge::ServiceBridge1to2> service_bridges_1_to_2;
   std::list<ros1_bridge::ServiceBridge2to1> service_bridges_2_to_1;
+  std::list<std::unique_ptr<ros1_bridge::ActionFactoryInterface> > action_factories_ros1;
+  std::list<std::unique_ptr<ros1_bridge::ActionFactoryInterface> > action_factories_ros2;
 
   // bridge all topics listed in a ROS 1 parameter
   // the topics parameter needs to be an array
@@ -256,6 +259,7 @@ int main(int argc, char * argv[])
   // type: the type of the service to bridge (e.g. 'pkgname/srv/SrvName')
   const char * services_1_to_2_parameter_name = "services_1_to_2";
   const char * services_2_to_1_parameter_name = "services_2_to_1";
+  const char * actions_parameter_name= "actions";
   const char * service_execution_timeout_parameter_name =
     "ros1_bridge/parameter_bridge/service_execution_timeout";
   if (argc > 1) {
@@ -266,6 +270,9 @@ int main(int argc, char * argv[])
   }
   if (argc > 3) {
     services_2_to_1_parameter_name = argv[3];
+  }
+  if (argc > 4) {
+    actions_parameter_name = argv[4];
   }
 
   // Topics
@@ -448,6 +455,64 @@ int main(int argc, char * argv[])
       stderr,
       "The parameter '%s' either doesn't exist or isn't an array\n",
       services_2_to_1_parameter_name);
+  }
+  XmlRpc::XmlRpcValue actions;
+  if (
+    ros1_node.getParam(actions_parameter_name, actions))
+  {
+    if (actions.hasMember("ros1")){
+      for(size_t i = 0; i < static_cast<size_t>(actions["ros1"].size()); ++i){
+        std::string package_name = static_cast<std::string>(actions["ros1"][i]["package"]);
+        std::string action_type_name = static_cast<std::string>(actions["ros1"][i]["type"]);
+        std::string action_name = static_cast<std::string>(actions["ros1"][i]["name"]);
+        auto factory = ros1_bridge::get_action_factory("ros1", package_name, action_type_name);
+        if (factory) {
+          printf("created ros1 action factory of action type: %s from package: %s\n", action_type_name.c_str(), package_name.c_str());
+          try {
+            factory->create_server_client(ros1_node, ros2_node, action_name);
+            action_factories_ros1.push_back(std::move(factory));
+          } catch (std::runtime_error & e) {
+            fprintf(stderr, "Failed to created a bridge: %s\n", e.what());
+          }
+          
+        } else {
+          fprintf(stderr, "Failed to create a ros1 action factory of action type: %s from package: %s\n", action_type_name.c_str(), package_name.c_str());
+        }
+      }
+    }
+    if (actions.hasMember("ros2")){
+      for(size_t i = 0; i < static_cast<size_t>(actions["ros2"].size()); ++i){
+        std::string package_name = static_cast<std::string>(actions["ros2"][i]["package"]);
+        std::string action_type_name = static_cast<std::string>(actions["ros2"][i]["type"]);
+        std::string action_name = static_cast<std::string>(actions["ros2"][i]["name"]);
+        auto factory = ros1_bridge::get_action_factory("ros2", package_name, action_type_name);
+        if (factory) {
+          printf("created ros2 action factory of action type: %s from package: %s\n", action_type_name.c_str(), package_name.c_str());
+          try {
+            factory->create_server_client(ros1_node, ros2_node, action_name);
+            action_factories_ros2.push_back(std::move(factory));
+          } catch (std::runtime_error & e) {
+            fprintf(stderr, "Failed to created a bridge: %s\n", e.what());
+          }
+        } else {
+          fprintf(stderr, "Failed to create a ros2 action factory of action type: %s from package: %s\n", action_type_name.c_str(), package_name.c_str());
+        }
+      }
+    }
+    if (!actions.hasMember("ros2") && !actions.hasMember("ros1"))
+    {
+      fprintf(
+      stderr,
+      "The parameter '%s' must have ros1 or/and ros2 members\n",
+      actions_parameter_name);
+    }
+
+  } else {
+    fprintf(
+      stderr,
+      "The parameter '%s' either doesn't exist\n",
+      actions_parameter_name);
+  
   }
 
   // ROS 1 asynchronous spinner
