@@ -276,6 +276,9 @@ int main(int argc, char * argv[])
   {
     for (size_t i = 0; i < static_cast<size_t>(topics.size()); ++i) {
       std::string topic_name = static_cast<std::string>(topics[i]["topic"]);
+      std::string topic_name_ros2 = topic_name;
+      if (topics[i].hasMember("topic_ros2"))
+        topic_name_ros2 = static_cast<std::string>(topics[i]["topic_ros2"]);
       std::string type_name = static_cast<std::string>(topics[i]["type"]);
       size_t queue_size = static_cast<int>(topics[i]["queue_size"]);
       if (!queue_size) {
@@ -283,8 +286,8 @@ int main(int argc, char * argv[])
       }
       printf(
         "Trying to create bidirectional bridge for topic '%s' "
-        "with ROS 2 type '%s'\n",
-        topic_name.c_str(), type_name.c_str());
+        "with ROS 2 name '%s' and type '%s'\n",
+        topic_name.c_str(), topic_name_ros2.c_str(), type_name.c_str());
 
       try {
         if (topics[i].hasMember("qos")) {
@@ -292,11 +295,11 @@ int main(int argc, char * argv[])
           auto qos_settings = qos_from_params(topics[i]["qos"]);
           printf("\n");
           ros1_bridge::BridgeHandles handles = ros1_bridge::create_bidirectional_bridge(
-            ros1_node, ros2_node, "", type_name, topic_name, queue_size, qos_settings);
+            ros1_node, ros2_node, "", type_name, topic_name, queue_size, qos_settings, topic_name_ros2);
           all_handles.push_back(handles);
         } else {
           ros1_bridge::BridgeHandles handles = ros1_bridge::create_bidirectional_bridge(
-            ros1_node, ros2_node, "", type_name, topic_name, queue_size);
+            ros1_node, ros2_node, "", type_name, topic_name, queue_size, topic_name_ros2);
           all_handles.push_back(handles);
         }
       } catch (std::runtime_error & e) {
@@ -324,6 +327,9 @@ int main(int argc, char * argv[])
       service_execution_timeout_parameter_name, service_execution_timeout);
     for (size_t i = 0; i < static_cast<size_t>(services_1_to_2.size()); ++i) {
       std::string service_name = static_cast<std::string>(services_1_to_2[i]["service"]);
+      std::string service_name_ros2 = service_name;
+      if (services_1_to_2[i].hasMember("service_ros2"))
+        service_name_ros2 = static_cast<std::string>(services_1_to_2[i]["service_ros2"]);
       std::string type_name = static_cast<std::string>(services_1_to_2[i]["type"]);
       {
         // for backward compatibility
@@ -338,8 +344,8 @@ int main(int argc, char * argv[])
         }
       }
       printf(
-        "Trying to create bridge for ROS 2 service '%s' with type '%s'\n",
-        service_name.c_str(), type_name.c_str());
+        "Trying to create bridge for ROS 1 service '%s', ROS 2 service '%s' with type '%s'\n",
+        service_name.c_str(), service_name_ros2.c_str(), type_name.c_str());
 
       const size_t index = type_name.find("/");
       if (index == std::string::npos) {
@@ -349,13 +355,14 @@ int main(int argc, char * argv[])
           service_name.c_str(), type_name.c_str());
         continue;
       }
+
       auto factory = ros1_bridge::get_service_factory(
         "ros2", type_name.substr(0, index), type_name.substr(index + 1));
       if (factory) {
         try {
           service_bridges_1_to_2.push_back(
             factory->service_bridge_1_to_2(
-              ros1_node, ros2_node, service_name, service_execution_timeout));
+              ros1_node, ros2_node, service_name, service_execution_timeout, service_name_ros2));
           printf("Created 1 to 2 bridge for service %s\n", service_name.c_str());
         } catch (std::runtime_error & e) {
           fprintf(
@@ -386,6 +393,9 @@ int main(int argc, char * argv[])
   {
     for (size_t i = 0; i < static_cast<size_t>(services_2_to_1.size()); ++i) {
       std::string service_name = static_cast<std::string>(services_2_to_1[i]["service"]);
+      std::string service_name_ros2 = service_name;
+      if (services_2_to_1[i].hasMember("service_ros2"))
+        service_name_ros2 = static_cast<std::string>(services_2_to_1[i]["service_ros2"]);
       std::string type_name = static_cast<std::string>(services_2_to_1[i]["type"]);
       {
         // for backward compatibility
@@ -417,8 +427,8 @@ int main(int argc, char * argv[])
       if (factory) {
         try {
           service_bridges_2_to_1.push_back(
-            factory->service_bridge_2_to_1(ros1_node, ros2_node, service_name));
-          printf("Created 2 to 1 bridge for service %s\n", service_name.c_str());
+            factory->service_bridge_2_to_1(ros1_node, ros2_node, service_name, service_name_ros2));
+          printf("Created 2 to 1 bridge for service ROS1 %s, ROS2 %s \n", service_name.c_str(), service_name_ros2.c_str());
         } catch (std::runtime_error & e) {
           fprintf(
             stderr,
@@ -441,14 +451,18 @@ int main(int argc, char * argv[])
   }
 
   // ROS 1 asynchronous spinner
-  ros::AsyncSpinner async_spinner(1);
+  ros::AsyncSpinner async_spinner(4);
   async_spinner.start();
 
   // ROS 2 spinning loop
-  rclcpp::executors::SingleThreadedExecutor executor;
-  while (ros1_node.ok() && rclcpp::ok()) {
-    executor.spin_node_once(ros2_node, std::chrono::milliseconds(1000));
-  }
+  rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 4);
+  executor.add_node(ros2_node->get_node_base_interface());
+  executor.spin();
+
+  // TODO: why was it implemented like this?
+  //while (ros1_node.ok() && rclcpp::ok()) {
+  //  executor.spin_node_once(ros2_node, std::chrono::milliseconds(1000));
+  //}
 
   return 0;
 }
