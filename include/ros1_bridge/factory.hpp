@@ -118,10 +118,11 @@ public:
     const std::string & topic_name,
     size_t queue_size,
     ros::Publisher ros1_pub,
-    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr)
+    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr,
+    rclcpp::CallbackGroup::SharedPtr callback_group = nullptr)
   {
     auto qos = rclcpp::SensorDataQoS(rclcpp::KeepLast(queue_size));
-    return create_ros2_subscriber(node, topic_name, qos, ros1_pub, ros2_pub);
+    return create_ros2_subscriber(node, topic_name, qos, ros1_pub, ros2_pub, callback_group);
   }
 
   rclcpp::SubscriptionBase::SharedPtr
@@ -130,12 +131,13 @@ public:
     const std::string & topic_name,
     const rmw_qos_profile_t & qos,
     ros::Publisher ros1_pub,
-    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr)
+    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr,
+    rclcpp::CallbackGroup::SharedPtr callback_group = nullptr)
   {
     auto rclcpp_qos = rclcpp::QoS(rclcpp::QoSInitialization::from_rmw(qos));
     rclcpp_qos.get_rmw_qos_profile() = qos;
     return create_ros2_subscriber(
-      node, topic_name, rclcpp_qos, ros1_pub, ros2_pub);
+      node, topic_name, rclcpp_qos, ros1_pub, ros2_pub, callback_group);
   }
 
   rclcpp::SubscriptionBase::SharedPtr
@@ -144,7 +146,8 @@ public:
     const std::string & topic_name,
     const rclcpp::QoS & qos,
     ros::Publisher ros1_pub,
-    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr)
+    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr,
+    rclcpp::CallbackGroup::SharedPtr callback_group = nullptr)
   {
     std::function<
       void(const typename ROS2_T::SharedPtr msg, const rclcpp::MessageInfo & msg_info)> callback;
@@ -153,6 +156,7 @@ public:
       ros1_pub, ros1_type_name_, ros2_type_name_, node->get_logger(), ros2_pub);
     rclcpp::SubscriptionOptions options;
     options.ignore_local_publications = true;
+    options.callback_group = callback_group;
     return node->create_subscription<ROS2_T>(
       topic_name, qos, callback, options);
   }
