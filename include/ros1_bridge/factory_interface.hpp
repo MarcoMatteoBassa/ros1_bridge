@@ -91,7 +91,8 @@ public:
     const std::string & topic_name,
     size_t queue_size,
     ros::Publisher ros1_pub,
-    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr) = 0;
+    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr,
+    rclcpp::CallbackGroup::SharedPtr callback_group = nullptr) = 0;
 
   virtual
   rclcpp::SubscriptionBase::SharedPtr
@@ -100,7 +101,8 @@ public:
     const std::string & topic_name,
     const rmw_qos_profile_t & qos_profile,
     ros::Publisher ros1_pub,
-    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr) = 0;
+    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr,
+    rclcpp::CallbackGroup::SharedPtr callback_group = nullptr) = 0;
 
   virtual
   rclcpp::SubscriptionBase::SharedPtr
@@ -109,7 +111,8 @@ public:
     const std::string & topic_name,
     const rclcpp::QoS & qos,
     ros::Publisher ros1_pub,
-    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr) = 0;
+    rclcpp::PublisherBase::SharedPtr ros2_pub = nullptr,
+    rclcpp::CallbackGroup::SharedPtr callback_group = nullptr) = 0;
 
   virtual
   void

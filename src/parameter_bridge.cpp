@@ -239,6 +239,8 @@ int main(int argc, char * argv[])
   // ROS 2 node
   rclcpp::init(argc, argv);
   auto ros2_node = rclcpp::Node::make_shared("ros_bridge");
+  auto callback_group =
+    ros2_node->create_callback_group(rclcpp::CallbackGroupType::Reentrant, true);
 
   std::list<ros1_bridge::BridgeHandles> all_handles;
   std::list<ros1_bridge::ServiceBridge1to2> service_bridges_1_to_2;
@@ -302,11 +304,11 @@ int main(int argc, char * argv[])
           auto qos_settings = qos_from_params(topics[i]["qos"]);
           printf("\n");
           ros1_bridge::BridgeHandles handles = ros1_bridge::create_bidirectional_bridge(
-            ros1_node, ros2_node, "", type_name, topic_name, queue_size, qos_settings, topic_name_ros2);
+            ros1_node, ros2_node, "", type_name, topic_name, queue_size, qos_settings, topic_name_ros2, callback_group);
           all_handles.push_back(handles);
         } else {
           ros1_bridge::BridgeHandles handles = ros1_bridge::create_bidirectional_bridge(
-            ros1_node, ros2_node, "", type_name, topic_name, queue_size, topic_name_ros2);
+            ros1_node, ros2_node, "", type_name, topic_name, queue_size, topic_name_ros2, callback_group);
           all_handles.push_back(handles);
         }
       } catch (std::runtime_error & e) {
