@@ -408,12 +408,22 @@ public:
     ros::ServiceClient client, rclcpp::Logger logger, const std::shared_ptr<rmw_request_id_t>,
     const std::shared_ptr<ROS2Request> request, std::shared_ptr<ROS2Response> response)
   {
+    std::string service_name = client.getService();
+    RCLCPP_INFO(logger, "Forwarding ROS 2 to ROS 1 service call for service %s", service_name.c_str());
+    
+    // Wait for service with 1 second timeout
+    if (!client.waitForExistence(ros::Duration(1.0))) {
+      RCLCPP_ERROR(logger, "ROS 1 service %s not available after waiting 1 second", service_name.c_str());
+      return;
+    }
+    
     ROS1_T srv;
     translate_2_to_1(*request, srv.request);
     if (client.call(srv)) {
       translate_1_to_2(srv.response, *response);
     } else {
-      throw std::runtime_error("Failed to get response from ROS 1 service " + client.getService());
+      RCLCPP_ERROR(logger, "Failed to get response from ROS 1 service %s", service_name.c_str());
+      return;
     }
   }
 
