@@ -68,6 +68,7 @@ public:
   {
     this->ros1_node_ = ros1_node;
     this->ros2_node_ = ros2_node;
+    action_name_ = action_name;
 
     server_ = std::make_shared<ROS1Server>(
       ros1_node, action_name,
@@ -102,7 +103,7 @@ public:
 
     // create a new handler for the goal
     std::shared_ptr<GoalHandler> handler;
-    handler = std::make_shared<GoalHandler>(gh1, client_, ros2_node_->get_logger());
+    handler = std::make_shared<GoalHandler>(gh1, client_, ros2_node_->get_logger(), action_name_);
     std::lock_guard<std::mutex> lock(mutex_);
     goals_.insert(std::make_pair(goal_id, handler));
 
@@ -124,6 +125,7 @@ private:
   public:
     void cancel()
     {
+      RCLCPP_INFO(logger_, "Cancelling goal for action %s", action_name_.c_str());
       std::lock_guard<std::mutex> lock(mutex_gh_);
       canceled_ = true;
       if (gh2_) {        // cancel goal if possible
@@ -190,8 +192,8 @@ private:
       }
     }
 
-    GoalHandler(ROS1GoalHandle & gh1, ROS2ClientSharedPtr & client, rclcpp::Logger logger)
-    : gh1_(gh1), gh2_(nullptr), client_(client), logger_(logger), canceled_(false) {}
+    GoalHandler(ROS1GoalHandle & gh1, ROS2ClientSharedPtr & client, rclcpp::Logger logger, const std::string& action_name)
+    : gh1_(gh1), gh2_(nullptr), client_(client), logger_(logger), canceled_(false), action_name_(action_name) {}
 
   private:
     ROS1GoalHandle gh1_;
@@ -200,6 +202,7 @@ private:
     rclcpp::Logger logger_;
     bool canceled_;      // cancel was called
     std::mutex mutex_gh_;
+    std::string action_name_;
   };
 
   ros::NodeHandle ros1_node_;
@@ -210,6 +213,8 @@ private:
 
   std::mutex mutex_;
   std::map<std::string, std::shared_ptr<GoalHandler>> goals_;
+
+  std::string action_name_;
 
   static void translate_goal_1_to_2(const ROS1Goal &, ROS2Goal &);
   static void translate_result_2_to_1(ROS1Result &, const ROS2Result &);
@@ -240,6 +245,8 @@ public:
   {
     this->ros1_node_ = ros1_node;
     this->ros2_node_ = ros2_node;
+    action_name_ = action_name;
+
     client_ = std::make_shared<ROS1Client>(ros1_node, action_name);
 
     server_ = rclcpp_action::create_server<ROS2_T>(
@@ -270,7 +277,7 @@ public:
     (void)uuid;
     (void)goal;
     if (!client_->waitForActionServerToStart(ros::Duration(1))) {
-      RCLCPP_INFO(ros2_node_->get_logger(), "Action server not available after waiting");
+      RCLCPP_INFO(ros2_node_->get_logger(), "\"%s\" action server not available after waiting", action_name_.c_str());
       return rclcpp_action::GoalResponse::REJECT;
     }
 
@@ -293,11 +300,11 @@ public:
   {
     std::size_t goal_id = get_goal_id_hash(gh2->get_goal_id());
     std::shared_ptr<GoalHandler> handler;
-    handler = std::make_shared<GoalHandler>(gh2, client_);
+    handler = std::make_shared<GoalHandler>(gh2, client_, action_name_);
     std::lock_guard<std::mutex> lock(mutex_);
     goals_.insert(std::make_pair(goal_id, handler));
 
-    RCLCPP_INFO(ros2_node_->get_logger(), "Sending goal");
+    RCLCPP_INFO(ros2_node_->get_logger(), "Sending goal for action %s", action_name_.c_str());
     std::thread(
       [handler, goal_id, this]() mutable {
         // execute the goal remotely
@@ -315,6 +322,7 @@ private:
   public:
     void cancel()
     {
+      ROS_INFO("Cancelling goal for action %s", action_name_.c_str());
       std::lock_guard<std::mutex> lock(mutex_);
       canceled_ = true;
       if (gh1_) {
@@ -342,7 +350,7 @@ private:
         [this, &result_ready,
         &cond_result](ROS1ClientGoalHandle goal_handle) mutable           // transition_cb
         {
-          ROS_INFO("Goal [%s]", goal_handle.getCommState().toString().c_str());
+          ROS_INFO("Goal [%s] for action %s", goal_handle.getCommState().toString().c_str(), action_name_.c_str());
           if (goal_handle.getCommState() == actionlib::CommState::RECALLING) {
             // cancelled before being processed
             auto result2 = std::make_shared<ROS2Result>();
@@ -355,7 +363,7 @@ private:
             auto result2 = std::make_shared<ROS2Result>();
             auto result1 = goal_handle.getResult();
             translate_result_1_to_2(*result2, *result1);
-            ROS_INFO("Goal [%s]", goal_handle.getTerminalState().toString().c_str());
+            ROS_INFO("Goal [%s] for action %s", goal_handle.getTerminalState().toString().c_str(), action_name_.c_str());
             if (goal_handle.getTerminalState() == actionlib::TerminalState::SUCCEEDED) {
               gh2_->succeed(result2);
             } else {
@@ -379,8 +387,8 @@ private:
       cond_result.wait(lck, [&result_ready] {return result_ready.load();});
     }
 
-    GoalHandler(std::shared_ptr<ROS2ServerGoalHandle> & gh2, std::shared_ptr<ROS1Client> & client)
-    : gh2_(gh2), client_(client), canceled_(false) {}
+    GoalHandler(std::shared_ptr<ROS2ServerGoalHandle> & gh2, std::shared_ptr<ROS1Client> & client, const std::string& action_name)
+    : gh2_(gh2), client_(client), canceled_(false), action_name_(action_name) {}
 
   private:
     std::shared_ptr<ROS1ClientGoalHandle> gh1_;
@@ -388,6 +396,7 @@ private:
     std::shared_ptr<ROS1Client> client_;
     bool canceled_;      // cancel was called
     std::mutex mutex_;
+    std::string action_name_;
   };
 
   std::size_t get_goal_id_hash(const rclcpp_action::GoalUUID & uuid)
@@ -404,6 +413,7 @@ private:
   std::mutex mutex_;
   std::map<std::size_t, std::shared_ptr<GoalHandler>> goals_;
 
+  std::string action_name_;
   static void translate_goal_2_to_1(const ROS2Goal &, ROS1Goal &);
   static void translate_result_1_to_2(ROS2Result &, const ROS1Result &);
   static void translate_feedback_1_to_2(ROS2Feedback &, const ROS1Feedback &);
